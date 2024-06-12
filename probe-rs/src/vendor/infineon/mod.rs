@@ -7,7 +7,7 @@ use crate::{
     vendor::{
         infineon::sequences::{
             xmc4000::XMC4000,
-            psoc6::PsoC62Series,
+            {psoc6::PsoC6, psoc6::PsoC6Family::Series62},
         }, 
         Vendor,
     },
@@ -24,7 +24,7 @@ impl Vendor for Infineon {
         let sequence = if chip.name.starts_with("XMC4") {
             DebugSequence::Arm(XMC4000::create())
         } else if chip.name.starts_with("PSoC_62") {
-            DebugSequence::Arm(PsoC62Series::create())
+            DebugSequence::Arm(PsoC6::create(Series62))
         }
             else {
             return None;
