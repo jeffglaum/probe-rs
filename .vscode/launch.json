@@ -7,6 +7,23 @@
     {
       "type": "lldb",
       "request": "launch",
+      "name": "connected device info",
+      "cargo": {
+        "args": ["build", "--package", "probe-rs-tools"],
+        "filter": {
+          "name": "probe-rs",
+          "kind": "bin"
+        }
+      },
+      "args": ["info", "--chip", "CY8C6247BZI-D54", "--chip-description-path", "C:\\r\\probe-rs\\probe-rs\\targets\\PSoC_62_Series.yaml"],
+      // "env": {
+      //     "RUST_LOG": "error",
+      //     "DEFMT_LOG": "info"
+      // },
+    },    
+    {
+      "type": "lldb",
+      "request": "launch",
       "name": "Launch smoke tester",
       "cargo": {
         "args": ["build", "--package=smoke_tester"]
