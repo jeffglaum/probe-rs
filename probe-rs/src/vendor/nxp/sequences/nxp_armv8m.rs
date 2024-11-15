@@ -501,7 +501,7 @@ impl MIMXRT5xxS {
             interface.flush()?;
             thread::sleep(Duration::from_millis(100));
         } else {
-            tracing::trace!("MIMXRT685-EVK FlexSPI flash reset (pulse PIO2_12)");
+            tracing::trace!("MIMXRT633-EVK FlexSPI flash reset (pulse PIO1_23)");
 
             // FIXME: We do this by twiddling PIO2_12, which is where the flash
             // reset pin is connected on MIMX685-EVK, but this code should not
@@ -509,14 +509,14 @@ impl MIMXRT5xxS {
             // generalize this so that the reset is configurable?
             //
             // See MIMX685-EVK schematics page 12 for details.
-            interface.write_word_32(0x40021044, 1 << 2)?; // enable HSGPIO2 clock
-            interface.write_word_32(0x40000074, 1 << 2)?; // take HSGPIO2 out of reset
-            interface.write_word_32(0x40004130, 0x130)?; // full drive and pullup
-            interface.write_word_32(0x40102008, 1 << 12)?; // PIO2_12 is an output
-            interface.write_word_32(0x40102288, 1 << 12)?; // PIO2_12 is driven low
+            interface.write_word_32(0x40021044, 1 << 1)?; // enable HSGPIO1 clock
+            interface.write_word_32(0x40020074, 1 << 1)?; // take the HSGPIO1 controller out of reset
+            interface.write_word_32(0x400040DC, 0x130)?; // configure PIO1_23 (flash reset) for full drive and pullup
+            interface.write_word_32(0x40102004, 1 << 23)?; // configure PIO1_23 (flash reset) as output
+            interface.write_word_32(0x40102284, 1 << 23)?; // drive PIO1_23 (flash reset) low to assert reset
             thread::sleep(Duration::from_millis(100));
 
-            interface.write_word_32(0x40102208, 1 << 12)?; // PIO2_12 is driven high
+            interface.write_word_32(0x40102204, 1 << 23)?; // drive PIO1_23 (flash reset) high to deassert reset
             interface.flush()?;
             thread::sleep(Duration::from_millis(100));
         }
