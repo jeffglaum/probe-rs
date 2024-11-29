@@ -23,6 +23,7 @@
 mod chip_info;
 pub(crate) mod registry;
 mod target;
+mod board;
 
 pub use probe_rs_target::{
     Chip, ChipFamily, Core, CoreType, FlashProperties, GenericRegion, InstructionSet, MemoryRange,
@@ -40,3 +41,4 @@ pub use target::{DebugSequence, Target, TargetSelector};
 pub(crate) use chip_info::ChipInfo;
 pub(crate) use registry::get_target_by_chip_info;
 pub(crate) use target::CoreExt;
+pub(crate) use board::Board;

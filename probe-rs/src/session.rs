@@ -14,7 +14,7 @@ use crate::{
             XtensaCommunicationInterface, XtensaDebugInterfaceState, XtensaError,
         },
     },
-    config::{CoreExt, DebugSequence, RegistryError, Target, TargetSelector},
+    config::{CoreExt, DebugSequence, RegistryError, Target, TargetSelector, Board},
     core::{Architecture, CombinedCoreState},
     probe::{
         fake_probe::FakeProbe, list::Lister, AttachMethod, DebugProbeError, Probe,
@@ -49,6 +49,7 @@ pub struct Session {
     interfaces: ArchitectureInterface,
     cores: Vec<CombinedCoreState>,
     configured_trace_sink: Option<TraceSink>,
+    board: Board,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -164,6 +165,11 @@ impl Session {
         Ok(session)
     }
 
+    /// Update board script contents
+    pub fn update_board_script(&mut self, path: String, script: String) {
+        self.board.update_script(path, script);
+    }
+
     fn attach_arm(
         mut probe: Probe,
         target: Target,
@@ -261,6 +267,7 @@ impl Session {
                 interfaces: ArchitectureInterface::Arm(interface),
                 cores,
                 configured_trace_sink: None,
+                board: Board::new(),
             };
 
             {
@@ -284,6 +291,7 @@ impl Session {
                 interfaces: ArchitectureInterface::Arm(interface),
                 cores,
                 configured_trace_sink: None,
+                board: Board::new(),
             })
         }
     }
@@ -305,6 +313,8 @@ impl Session {
         }
 
         probe.attach_to_unspecified()?;
+
+        let default_board = Board::new();
 
         // We try to guess the TAP number. Normally we trust the scan chain, but some probes are
         // only quasi-JTAG (wch-link), so we'll have to work with at least 1, but if we're guessing
@@ -367,6 +377,7 @@ impl Session {
             interfaces,
             cores,
             configured_trace_sink: None,
+            board: default_board,
         };
 
         // Wait for the cores to be halted.

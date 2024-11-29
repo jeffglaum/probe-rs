@@ -85,6 +85,10 @@ pub struct SharedOptions {
     /// Scan the memory to find the RTT control block
     #[clap(long)]
     pub(crate) rtt_scan_memory: bool,
+
+    /// Board configuration script
+    #[clap(long)]
+    pub(crate) board_script: Option<String>,
 }
 
 impl Cmd {
@@ -108,6 +112,17 @@ impl Cmd {
             true => session.target().rtt_scan_regions.clone(),
             false => ScanRegion::Ranges(vec![]),
         };
+
+        match self.shared_options.board_script {
+            Some(s) => {
+                let p = Path::new(&s);
+                let r = fs::read_to_string(p);
+                if r.is_ok() {
+                    session.update_board_script(p.parent().unwrap().display().to_string(), r.unwrap());
+                }
+            }
+            None => ()
+        }
 
         let mut rtt_config = RttConfig::default();
         rtt_config.channels.push(RttChannelConfig {

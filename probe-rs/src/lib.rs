@@ -86,6 +86,7 @@ mod memory;
 pub mod probe;
 pub mod rtt;
 pub mod semihosting;
+pub mod script;
 mod session;
 #[cfg(test)]
 mod test;
