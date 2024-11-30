@@ -6,7 +6,7 @@ use pyo3_ffi::c_str;
 use std::ffi::CString;
 
 #[pyclass]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 /// Script interface
 pub struct ScriptInterface {
     //interface: &'static mut dyn ArmMemoryInterface
@@ -27,7 +27,7 @@ impl ScriptInterface {
 }
 
 /// Script management
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Script {
     path: Option<String>,
     script: Option<String>,

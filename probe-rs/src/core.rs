@@ -271,11 +271,14 @@ impl<'probe> Core<'probe> {
         options: CoreAccessOptions,
         target: &Target,
         core_type: CoreType,
+        //board: &'probe Board,
+    //) -> CombinedCoreState<'probe> {
     ) -> CombinedCoreState {
         CombinedCoreState {
             id,
             core_state: CoreState::new(ResolvedCoreOptions::new(target, options)),
             specific_state: SpecificCoreState::from_core_type(core_type),
+            //board,
         }
     }
 

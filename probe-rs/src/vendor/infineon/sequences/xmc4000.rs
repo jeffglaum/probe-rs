@@ -4,6 +4,7 @@ use crate::architecture::arm::armv7m::{Aircr, Dhcsr, FpCtrl, FpRev1CompX, FpRev2
 use crate::architecture::arm::memory::ArmMemoryInterface;
 use crate::architecture::arm::sequences::{ArmDebugSequence, ArmDebugSequenceError};
 use crate::architecture::arm::ArmError;
+use crate::config::BoardInterface;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
@@ -102,6 +103,7 @@ impl ArmDebugSequence for XMC4000 {
         core: &mut dyn ArmMemoryInterface,
         core_type: probe_rs_target::CoreType,
         debug_base: Option<u64>,
+        //board: &dyn BoardInterface,
     ) -> Result<(), ArmError> {
         tracing::trace!("performing XMC4000 ResetCatchSet");
 
@@ -137,7 +139,8 @@ impl ArmDebugSequence for XMC4000 {
 
                     // Perform a warm reset
                     self.reset_catch_set(core, core_type, debug_base)?;
-                    self.reset_system(core, core_type, debug_base)?;
+                    // JDG - TODO
+                    //self.reset_system(core, core_type, debug_base, board)?;
                 }
                 Err(e) => return Err(e),
                 Ok(()) => {
@@ -278,6 +281,7 @@ impl ArmDebugSequence for XMC4000 {
         core: &mut dyn ArmMemoryInterface,
         _core_type: probe_rs_target::CoreType,
         _debug_base: Option<u64>,
+        _board: &dyn BoardInterface,
     ) -> Result<(), ArmError> {
         // XMC4700/XMC4800 reference manual v1.3 § 27.2.2.2:
         // > Since the Reset Status Information in register SCU.RSTSTAT is the accumulated reset

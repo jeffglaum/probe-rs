@@ -1,23 +1,10 @@
 use crate::script::Script;
 
-#[derive(Clone)]
+/// Definition of a hardware board
+#[derive(Debug)]
 pub struct Board {
-    /// The name of the board.
-    pub name: String,
     /// Board configuration script.
-    pub script: Script,
-}
-
-impl std::fmt::Debug for Board {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Board {{
-            identifier: {:?},
-        }}",
-            self.name
-        )
-    }
+    script: Script,
 }
 
 impl Board {
@@ -25,12 +12,21 @@ impl Board {
     ///
     pub fn new() -> Board {
         Board {
-            name: "foobar".to_string(),
             script: Script::new(),
         }
     }
 
-    pub fn update_script(&mut self, path: String, script: String) {
+}
+
+/// Hardware board interface
+pub trait BoardInterface: Send {
+    /// Update hardware board script contents
+    fn update_script(&mut self, path: String, script: String);
+}
+
+impl BoardInterface for Board {
+
+    fn update_script(&mut self, path: String, script: String) {
         self.script.update_script(path, script);
     }
 }

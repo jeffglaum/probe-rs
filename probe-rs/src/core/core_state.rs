@@ -9,21 +9,24 @@ use crate::{
             RiscvCoreState,
         },
         xtensa::{communication_interface::XtensaCommunicationInterface, XtensaCoreState},
-    },
-    Core, CoreType, Error, Target,
+    }, config::BoardInterface, Core, CoreType, Error, Target
 };
 
 use super::ResolvedCoreOptions;
 
 #[derive(Debug)]
+//pub(crate) struct CombinedCoreState<'probe> {
 pub(crate) struct CombinedCoreState {
     pub(crate) core_state: CoreState,
 
     pub(crate) specific_state: SpecificCoreState,
 
     pub(crate) id: usize,
+
+    //pub(crate) board: &'probe dyn BoardInterface,
 }
 
+//impl<'probe> CombinedCoreState<'probe> {
 impl CombinedCoreState {
     pub fn id(&self) -> usize {
         self.id
@@ -41,6 +44,7 @@ impl CombinedCoreState {
         &'probe mut self,
         target: &'probe Target,
         arm_interface: &'probe mut Box<dyn ArmProbeInterface>,
+        board: &'probe impl BoardInterface,
     ) -> Result<Core<'probe>, Error> {
         let name = &target.cores[self.id].name;
 
@@ -60,7 +64,7 @@ impl CombinedCoreState {
                 self.id,
                 name,
                 target,
-                crate::architecture::arm::armv6m::Armv6m::new(memory, s, debug_sequence)?,
+                crate::architecture::arm::armv6m::Armv6m::new(memory, s, debug_sequence, board)?,
             ),
             SpecificCoreState::Armv7a(s) => Core::new(
                 self.id,
@@ -71,13 +75,14 @@ impl CombinedCoreState {
                     s,
                     options.debug_base.expect("base_address not specified"),
                     debug_sequence,
+                    board,
                 )?,
             ),
             SpecificCoreState::Armv7m(s) | SpecificCoreState::Armv7em(s) => Core::new(
                 self.id,
                 name,
                 target,
-                crate::architecture::arm::armv7m::Armv7m::new(memory, s, debug_sequence)?,
+                crate::architecture::arm::armv7m::Armv7m::new(memory, s, debug_sequence, board)?,
             ),
             SpecificCoreState::Armv8a(s) => Core::new(
                 self.id,
@@ -89,13 +94,14 @@ impl CombinedCoreState {
                     options.debug_base.expect("base_address not specified"),
                     options.cti_base.expect("cti_address not specified"),
                     debug_sequence,
+                    board
                 )?,
             ),
             SpecificCoreState::Armv8m(s) => Core::new(
                 self.id,
                 name,
                 target,
-                crate::architecture::arm::armv8m::Armv8m::new(memory, s, debug_sequence)?,
+                crate::architecture::arm::armv8m::Armv8m::new(memory, s, debug_sequence, board)?,
             ),
             _ => {
                 unreachable!(

@@ -16,8 +16,7 @@ use crate::{
         memory::ArmMemoryInterface,
         sequences::ArmDebugSequence,
         ArmCommunicationInterface, ArmError, DapAccess, DpAddress, FullyQualifiedApAddress, Pins,
-    },
-    core::MemoryMappedRegister,
+    }, config::BoardInterface, core::MemoryMappedRegister
     //script::Script,
 };
 
@@ -120,6 +119,7 @@ impl ArmDebugSequence for LPC55Sxx {
         interface: &mut dyn ArmMemoryInterface,
         _core_type: crate::CoreType,
         _debug_base: Option<u64>,
+        //_board: &dyn BoardInterface,
     ) -> Result<(), ArmError> {
         let mut reset_vector: u32 = 0xffff_ffff;
         let mut reset_vector_addr = 0x0000_0004;
@@ -217,6 +217,7 @@ impl ArmDebugSequence for LPC55Sxx {
         interface: &mut dyn ArmMemoryInterface,
         _core_type: crate::CoreType,
         _debug_base: Option<u64>,
+        _board: &dyn BoardInterface,
     ) -> Result<(), ArmError> {
         let mut aircr = Aircr(0);
         aircr.vectkey();
@@ -608,6 +609,7 @@ impl ArmDebugSequence for MIMXRT5xxS {
         probe: &mut dyn ArmMemoryInterface,
         core_type: probe_rs_target::CoreType,
         _debug_base: Option<u64>,
+        _board: &dyn BoardInterface,
     ) -> Result<(), ArmError> {
         self.check_core_type(core_type)?;
 
@@ -740,6 +742,7 @@ impl ArmDebugSequence for MIMXRT118x {
         interface: &mut dyn ArmMemoryInterface,
         _core_type: crate::CoreType,
         _: Option<u64>,
+        _board: &dyn BoardInterface,
     ) -> Result<(), ArmError> {
         tracing::trace!("MIMXRT118x reset system");
 

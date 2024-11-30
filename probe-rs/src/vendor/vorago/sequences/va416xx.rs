@@ -10,8 +10,7 @@ use crate::{
         memory::ArmMemoryInterface,
         sequences::{cortex_m_core_start, ArmDebugSequence},
         ArmError, ArmProbeInterface, FullyQualifiedApAddress,
-    },
-    MemoryMappedRegister,
+    }, config::BoardInterface, MemoryMappedRegister
 };
 
 /// Marker structure for the VA416xx device
@@ -60,6 +59,7 @@ impl ArmDebugSequence for Va416xx {
         interface: &mut dyn ArmMemoryInterface,
         core_type: CoreType,
         debug_base: Option<u64>,
+        _board: &dyn BoardInterface,
     ) -> Result<(), ArmError> {
         use crate::architecture::arm::core::armv7m::{Aircr, Dhcsr};
         // Check if the previous code requested a halt before reset

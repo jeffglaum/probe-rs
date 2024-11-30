@@ -14,9 +14,7 @@ use crate::{
     architecture::arm::{
         dp::{DLPIDR, TARGETID},
         ArmProbeInterface,
-    },
-    probe::{DebugProbeError, WireProtocol},
-    MemoryMappedRegister,
+    }, config::BoardInterface, probe::{DebugProbeError, WireProtocol}, MemoryMappedRegister
 };
 
 use super::{
@@ -672,6 +670,7 @@ pub trait ArmDebugSequence: Send + Sync + Debug {
         core: &mut dyn ArmMemoryInterface,
         core_type: CoreType,
         debug_base: Option<u64>,
+        //_board_interface: &dyn BoardInterface,
     ) -> Result<(), ArmError> {
         // Dispatch based on core type (Cortex-A vs M)
         match core_type {
@@ -748,6 +747,7 @@ pub trait ArmDebugSequence: Send + Sync + Debug {
         interface: &mut dyn ArmMemoryInterface,
         core_type: CoreType,
         debug_base: Option<u64>,
+        _board_interface: &dyn BoardInterface,
     ) -> Result<(), ArmError> {
         // Dispatch based on core type (Cortex-A vs M)
         match core_type {

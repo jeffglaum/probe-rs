@@ -11,14 +11,10 @@ use crate::{
     architecture::arm::{
         core::registers::cortex_m::XPSR, memory::ArmMemoryInterface, sequences::ArmDebugSequence,
         ArmError,
-    },
-    core::{
+    }, config::BoardInterface, core::{
         Architecture, CoreInformation, CoreInterface, CoreRegisters, CoreStatus, HaltReason,
         MemoryMappedRegister, RegisterId, RegisterValue, VectorCatchCondition,
-    },
-    error::Error,
-    memory::{valid_32bit_address, CoreMemoryInterface},
-    BreakpointCause, CoreRegister, CoreType, InstructionSet, MemoryInterface,
+    }, error::Error, memory::{valid_32bit_address, CoreMemoryInterface}, BreakpointCause, CoreRegister, CoreType, InstructionSet, MemoryInterface
 };
 use bitfield::bitfield;
 use std::{
@@ -592,6 +588,8 @@ pub struct Armv7m<'probe> {
     state: &'probe mut CortexMState,
 
     sequence: Arc<dyn ArmDebugSequence>,
+
+    board: &'probe dyn BoardInterface,
 }
 
 impl<'probe> Armv7m<'probe> {
@@ -599,6 +597,7 @@ impl<'probe> Armv7m<'probe> {
         mut memory: Box<dyn ArmMemoryInterface + 'probe>,
         state: &'probe mut CortexMState,
         sequence: Arc<dyn ArmDebugSequence>,
+        board: &'probe impl BoardInterface,
     ) -> Result<Self, Error> {
         if !state.initialized() {
             // determine current state
@@ -634,6 +633,7 @@ impl<'probe> Armv7m<'probe> {
             memory,
             state,
             sequence,
+            board,
         })
     }
 
@@ -797,7 +797,7 @@ impl<'probe> CoreInterface for Armv7m<'probe> {
         self.state.semihosting_command = None;
 
         self.sequence
-            .reset_system(&mut *self.memory, crate::CoreType::Armv7m, None)?;
+            .reset_system(&mut *self.memory, crate::CoreType::Armv7m, None, self.board)?;
         Ok(())
     }
 
@@ -807,7 +807,7 @@ impl<'probe> CoreInterface for Armv7m<'probe> {
         self.reset_catch_set()?;
 
         self.sequence
-            .reset_system(&mut *self.memory, crate::CoreType::Armv7m, None)?;
+            .reset_system(&mut *self.memory, crate::CoreType::Armv7m, None, self.board)?;
 
         // Update core status
         let _ = self.status()?;
@@ -1069,6 +1069,7 @@ impl<'probe> CoreInterface for Armv7m<'probe> {
     #[tracing::instrument(skip(self))]
     fn reset_catch_set(&mut self) -> Result<(), Error> {
         self.sequence
+            //.reset_catch_set(&mut *self.memory, CoreType::Armv7m, None, self.board)?;
             .reset_catch_set(&mut *self.memory, CoreType::Armv7m, None)?;
 
         Ok(())

@@ -14,7 +14,7 @@ use crate::{
             XtensaCommunicationInterface, XtensaDebugInterfaceState, XtensaError,
         },
     },
-    config::{CoreExt, DebugSequence, RegistryError, Target, TargetSelector, Board},
+    config::{Board, BoardInterface, CoreExt, DebugSequence, RegistryError, Target, TargetSelector},
     core::{Architecture, CombinedCoreState},
     probe::{
         fake_probe::FakeProbe, list::Lister, AttachMethod, DebugProbeError, Probe,
@@ -22,8 +22,7 @@ use crate::{
     },
     Core, CoreType, Error,
 };
-use std::ops::DerefMut;
-use std::{fmt, sync::Arc, time::Duration};
+use std::{fmt, ops::DerefMut, sync::Arc, time::Duration};
 
 /// The `Session` struct represents an active debug session.
 ///
@@ -103,9 +102,10 @@ impl ArchitectureInterface {
         &'probe mut self,
         target: &'probe Target,
         combined_state: &'probe mut CombinedCoreState,
+        board: &'probe impl BoardInterface,
     ) -> Result<Core<'probe>, Error> {
         match self {
-            ArchitectureInterface::Arm(interface) => combined_state.attach_arm(target, interface),
+            ArchitectureInterface::Arm(interface ) => combined_state.attach_arm(target, interface, board),
             ArchitectureInterface::Jtag(probe, ifaces) => {
                 let idx = combined_state.interface_idx();
                 probe.select_jtag_tap(idx)?;
@@ -140,6 +140,8 @@ impl Session {
     ) -> Result<Self, Error> {
         let (probe, target) = get_target_from_selector(target, attach_method, probe)?;
 
+        let board = Board::new();
+
         let cores = target
             .cores
             .iter()
@@ -150,14 +152,15 @@ impl Session {
                     core.core_access_options.clone(),
                     &target,
                     core.core_type,
+                    //&board,
                 )
             })
             .collect();
 
         let mut session = if let Architecture::Arm = target.architecture() {
-            Self::attach_arm(probe, target, attach_method, permissions, cores)?
+            Self::attach_arm(probe, target, attach_method, permissions, cores, board)?
         } else {
-            Self::attach_jtag(probe, target, attach_method, permissions, cores)?
+            Self::attach_jtag(probe, target, attach_method, permissions, cores, board)?
         };
 
         session.clear_all_hw_breakpoints()?;
@@ -176,6 +179,7 @@ impl Session {
         attach_method: AttachMethod,
         permissions: Permissions,
         cores: Vec<CombinedCoreState>,
+        board: Board,
     ) -> Result<Self, Error> {
         let default_core = target.default_core();
 
@@ -267,7 +271,7 @@ impl Session {
                 interfaces: ArchitectureInterface::Arm(interface),
                 cores,
                 configured_trace_sink: None,
-                board: Board::new(),
+                board,
             };
 
             {
@@ -291,7 +295,7 @@ impl Session {
                 interfaces: ArchitectureInterface::Arm(interface),
                 cores,
                 configured_trace_sink: None,
-                board: Board::new(),
+                board,
             })
         }
     }
@@ -302,6 +306,7 @@ impl Session {
         _attach_method: AttachMethod,
         _permissions: Permissions,
         cores: Vec<CombinedCoreState>,
+        board: Board,
     ) -> Result<Self, Error> {
         // While we still don't support mixed architectures
         // (they'd need per-core debug sequences), we can at least
@@ -313,8 +318,6 @@ impl Session {
         }
 
         probe.attach_to_unspecified()?;
-
-        let default_board = Board::new();
 
         // We try to guess the TAP number. Normally we trust the scan chain, but some probes are
         // only quasi-JTAG (wch-link), so we'll have to work with at least 1, but if we're guessing
@@ -377,7 +380,7 @@ impl Session {
             interfaces,
             cores,
             configured_trace_sink: None,
-            board: default_board,
+            board,
         };
 
         // Wait for the cores to be halted.
@@ -498,7 +501,7 @@ impl Session {
             .get_mut(core_index)
             .ok_or(Error::CoreNotFound(core_index))?;
 
-        match self.interfaces.attach(&self.target, combined_state) {
+        match self.interfaces.attach(&self.target, combined_state, &self.board) {
             Err(Error::Xtensa(XtensaError::CoreDisabled)) => {
                 // If the core is disabled, we can't attach to it.
                 // We can't do anything about it, so we just translate

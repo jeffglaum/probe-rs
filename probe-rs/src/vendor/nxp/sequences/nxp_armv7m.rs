@@ -20,8 +20,7 @@ use crate::{
         memory::ArmMemoryInterface,
         sequences::{ArmDebugSequence, ArmDebugSequenceError},
         ArmError,
-    },
-    core::MemoryMappedRegister,
+    }, config::BoardInterface, core::MemoryMappedRegister
 };
 
 /// Debug sequences for MIMXRT10xx MCUs.
@@ -84,6 +83,7 @@ impl ArmDebugSequence for MIMXRT10xx {
         interface: &mut dyn ArmMemoryInterface,
         core_type: crate::CoreType,
         _: Option<u64>,
+        _board: &dyn BoardInterface,
     ) -> Result<(), ArmError> {
         self.check_core_type(core_type)?;
 
@@ -362,6 +362,7 @@ impl ArmDebugSequence for MIMXRT117x {
         _: &mut dyn ArmMemoryInterface,
         _: probe_rs_target::CoreType,
         _: Option<u64>,
+        //_board: &dyn BoardInterface,
     ) -> Result<(), ArmError> {
         self.simulate_reset_catch.store(true, Ordering::Relaxed);
         Ok(())
@@ -381,6 +382,7 @@ impl ArmDebugSequence for MIMXRT117x {
         probe: &mut dyn ArmMemoryInterface,
         core_type: probe_rs_target::CoreType,
         debug_base: Option<u64>,
+        _board: &dyn BoardInterface,
     ) -> Result<(), ArmError> {
         // OK to perform before the reset, since the configuration
         // persists beyond the reset.

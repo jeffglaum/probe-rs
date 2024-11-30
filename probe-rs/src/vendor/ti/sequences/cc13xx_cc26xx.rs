@@ -8,6 +8,7 @@ use crate::architecture::arm::communication_interface::DapProbe;
 use crate::architecture::arm::memory::ArmMemoryInterface;
 use crate::architecture::arm::sequences::{ArmDebugSequence, ArmDebugSequenceError};
 use crate::architecture::arm::{ArmError, DpAddress};
+use crate::config::BoardInterface;
 use crate::probe::{DebugProbeError, WireProtocol};
 use crate::MemoryMappedRegister;
 
@@ -348,6 +349,7 @@ impl ArmDebugSequence for CC13xxCC26xx {
         probe: &mut dyn ArmMemoryInterface,
         core_type: probe_rs_target::CoreType,
         debug_base: Option<u64>,
+        _board: &dyn BoardInterface,
     ) -> Result<(), ArmError> {
         // Check if the previous code requested a halt before reset
         let demcr = Demcr(probe.read_word_32(Demcr::get_mmio_address())?);
