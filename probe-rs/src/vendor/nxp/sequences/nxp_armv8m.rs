@@ -485,12 +485,10 @@ impl MIMXRT5xxS {
         Ok(())
     }
 
-    fn reset_flash(&self, _interface: &mut dyn ArmMemoryInterface) -> Result<(), ArmError> {
+    fn reset_flash(&self, _interface: &mut dyn ArmMemoryInterface, board: &dyn BoardInterface) -> Result<(), ArmError> {
 
         tracing::trace!("FlexSPI flash reset");
-
-        //Script.reset_flash();
-
+        board.reset_flash();
 
         Ok(())
     }
@@ -609,7 +607,7 @@ impl ArmDebugSequence for MIMXRT5xxS {
         probe: &mut dyn ArmMemoryInterface,
         core_type: probe_rs_target::CoreType,
         _debug_base: Option<u64>,
-        _board: &dyn BoardInterface,
+        board: &dyn BoardInterface,
     ) -> Result<(), ArmError> {
         self.check_core_type(core_type)?;
 
@@ -631,7 +629,7 @@ impl ArmDebugSequence for MIMXRT5xxS {
         probe.flush()?;
 
         // Reset the flash peripheral on FlexSPI0, if any.
-        self.reset_flash(probe)?;
+        self.reset_flash(probe, board)?;
 
         // Set watch point at SYSTEM_STICK_CALIB access
         probe.write_word_32(Self::DWT_COMP0, Self::SYSTEM_STICK_CALIB_ADDR)?;

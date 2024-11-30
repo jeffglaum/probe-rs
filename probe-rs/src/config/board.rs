@@ -22,11 +22,18 @@ impl Board {
 pub trait BoardInterface: Send {
     /// Update hardware board script contents
     fn update_script(&mut self, path: String, script: String);
+
+    /// Reset flash
+    fn reset_flash(&self);
 }
 
 impl BoardInterface for Board {
 
     fn update_script(&mut self, path: String, script: String) {
         self.script.update_script(path, script);
+    }
+
+    fn reset_flash(&self) {
+        self.script.reset_flash();
     }
 }

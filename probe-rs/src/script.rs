@@ -48,7 +48,7 @@ impl Script {
     }
 
     /// Reset flash
-    pub fn reset_flash(&mut self) {
+    pub fn reset_flash(&self) {
 
         if self.script == None || self.path == None {
             return
