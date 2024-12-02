@@ -152,7 +152,6 @@ impl Session {
                     core.core_access_options.clone(),
                     &target,
                     core.core_type,
-                    //&board,
                 )
             })
             .collect();

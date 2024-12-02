@@ -4,19 +4,20 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3_ffi::c_str;
 use std::ffi::CString;
+use crate::architecture::arm::memory::ArmMemoryInterface;
 
 #[pyclass]
 #[derive(Clone, Copy, Debug)]
 /// Script interface
 pub struct ScriptInterface {
-    //interface: &'static mut dyn ArmMemoryInterface
+    num: u8,
 }
 
 #[pymethods]
 impl ScriptInterface {
     fn write_word_32(slf: PyRef<'_, Self>, address: usize, data: u32) -> PyRef<'_, Self> {
-        
         tracing::warn!("write_word_32(0x{:x}, 0x{:x})", address, data);
+        tracing::warn!("number={}", slf.num);
         slf
     }
 
@@ -31,14 +32,13 @@ impl ScriptInterface {
 pub struct Script {
     path: Option<String>,
     script: Option<String>,
-    interface: ScriptInterface,
 }
 
 /// Methods that call out to script
 impl Script {
     /// Create new board script
     pub fn new() -> Script {
-        Script { path: None, script: None, interface: ScriptInterface{} }
+        Script { path: None, script: None }
     }
 
     /// Update board script
@@ -48,11 +48,13 @@ impl Script {
     }
 
     /// Reset flash
-    pub fn reset_flash(&self) {
+    pub fn reset_flash(&self, _memory: &dyn ArmMemoryInterface) {
 
         if self.script == None || self.path == None {
             return
         }
+
+        let s = ScriptInterface{num: 5};
 
         let script = CString::new(self.script.clone().unwrap()).unwrap();
         let _from_python = Python::with_gil(|py| -> PyResult<Py<PyAny>> {
@@ -64,7 +66,7 @@ impl Script {
             let app: Py<PyAny> = PyModule::from_code(py, script.as_c_str(), c_str!(""), c_str!(""))?
                 .getattr("reset_flash")?
                 .into();
-            let args = (self.interface, "MIMXRT6");
+            let args = (s, "MIMXRT6");
             app.call1(py, args)
         });
     }
