@@ -1,4 +1,6 @@
-use crate::{architecture::arm::memory::ArmMemoryInterface, script::Script};
+//use crate::{architecture::arm::memory::ArmMemoryInterface, script::Script};
+use crate::script::Script;
+use crate::architecture::arm::armv8m::Foo;
 
 /// Definition of a hardware board
 #[derive(Debug)]
@@ -24,7 +26,8 @@ pub trait BoardInterface: Send {
     fn update_script(&mut self, path: String, script: String);
 
     /// Reset flash
-    fn reset_flash(&self, interface: &mut dyn ArmMemoryInterface);
+    //fn reset_flash(&self, interface: &mut dyn ArmMemoryInterface);
+    fn reset_flash(&self, interface: &Foo);
 }
 
 impl BoardInterface for Board {
@@ -33,7 +36,8 @@ impl BoardInterface for Board {
         self.script.update_script(path, script);
     }
 
-    fn reset_flash(&self, interface: &mut dyn ArmMemoryInterface) {
+    //fn reset_flash(&self, interface: &mut dyn ArmMemoryInterface) {
+    fn reset_flash(&self, interface: &Foo) {
         self.script.reset_flash(interface);
     }
 }

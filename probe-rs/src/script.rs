@@ -4,20 +4,18 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3_ffi::c_str;
 use std::ffi::CString;
-use crate::architecture::arm::memory::ArmMemoryInterface;
+//use crate::architecture::arm::memory::ArmMemoryInterface;
+use crate::architecture::arm::armv8m::Foo;
 
 #[pyclass]
 #[derive(Clone, Copy, Debug)]
 /// Script interface
-pub struct ScriptInterface {
-    num: u8,
-}
+pub struct ScriptInterface {}
 
 #[pymethods]
 impl ScriptInterface {
     fn write_word_32(slf: PyRef<'_, Self>, address: usize, data: u32) -> PyRef<'_, Self> {
         tracing::warn!("write_word_32(0x{:x}, 0x{:x})", address, data);
-        tracing::warn!("number={}", slf.num);
         slf
     }
 
@@ -48,13 +46,14 @@ impl Script {
     }
 
     /// Reset flash
-    pub fn reset_flash(&self, _memory: &dyn ArmMemoryInterface) {
+    //pub fn reset_flash(&self, _memory: &dyn ArmMemoryInterface) {
+    pub fn reset_flash(&self, _memory: &Foo) {
 
         if self.script == None || self.path == None {
             return
         }
 
-        let s = ScriptInterface{num: 5};
+        let s = ScriptInterface{};
 
         let script = CString::new(self.script.clone().unwrap()).unwrap();
         let _from_python = Python::with_gil(|py| -> PyResult<Py<PyAny>> {
@@ -66,6 +65,8 @@ impl Script {
             let app: Py<PyAny> = PyModule::from_code(py, script.as_c_str(), c_str!(""), c_str!(""))?
                 .getattr("reset_flash")?
                 .into();
+            // JDG - how to convert memory into a pyobject to be passed through the script?
+
             let args = (s, "MIMXRT6");
             app.call1(py, args)
         });

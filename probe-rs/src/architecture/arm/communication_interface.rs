@@ -87,7 +87,7 @@ pub trait ArmProbeInterface: DapAccess + SwdSequence + SwoAccess + Send {
     fn memory_interface(
         &mut self,
         access_port: &FullyQualifiedApAddress,
-    ) -> Result<Box<dyn ArmMemoryInterface + '_>, ArmError>;
+    ) -> Result<Box<dyn ArmMemoryInterface + Send + Sync + '_>, ArmError>;
 
     /// Reads the chip info from the romtable of given debug port.
     fn read_chip_info_from_rom_table(
@@ -253,7 +253,7 @@ impl ArmProbeInterface for ArmCommunicationInterface<Initialized> {
     fn memory_interface(
         &mut self,
         access_port_address: &FullyQualifiedApAddress,
-    ) -> Result<Box<dyn ArmMemoryInterface + '_>, ArmError> {
+    ) -> Result<Box<dyn ArmMemoryInterface + Send + Sync + '_>, ArmError> {
         ArmCommunicationInterface::memory_interface(self, access_port_address)
     }
 
@@ -407,7 +407,7 @@ impl<'interface> ArmCommunicationInterface<Initialized> {
     pub fn memory_interface(
         &'interface mut self,
         access_port_address: &FullyQualifiedApAddress,
-    ) -> Result<Box<dyn ArmMemoryInterface + 'interface>, ArmError> {
+    ) -> Result<Box<dyn ArmMemoryInterface + Send + Sync + 'interface>, ArmError> {
         if !self
             .select_dp(access_port_address.dp())?
             .access_ports

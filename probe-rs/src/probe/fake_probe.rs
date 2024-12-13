@@ -515,7 +515,7 @@ impl ArmProbeInterface for FakeArmInterface<Initialized> {
     fn memory_interface(
         &mut self,
         access_port_address: &FullyQualifiedApAddress,
-    ) -> Result<Box<dyn ArmMemoryInterface + '_>, ArmError> {
+    ) -> Result<Box<dyn ArmMemoryInterface + Send + Sync + '_>, ArmError> {
         match self.probe.memory_ap {
             MockedAp::MemoryAp(ref mut _memory_ap) => {
                 let memory = ADIMemoryInterface::new(self, access_port_address)?;

@@ -42,6 +42,8 @@ pub(crate) struct BlackMagicProbeMemoryInterface<'probe> {
     csw: u32,
 }
 
+unsafe impl<'probe> Sync for BlackMagicProbeMemoryInterface<'probe> {}
+
 impl UninitializedBlackMagicArmProbe {
     pub fn new(probe: Box<BlackMagicProbe>) -> Self {
         Self { probe }
@@ -203,7 +205,7 @@ impl ArmProbeInterface for BlackMagicProbeArmDebug {
     fn memory_interface(
         &mut self,
         access_port: &FullyQualifiedApAddress,
-    ) -> Result<Box<dyn crate::architecture::arm::memory::ArmMemoryInterface + '_>, ArmError> {
+    ) -> Result<Box<dyn crate::architecture::arm::memory::ArmMemoryInterface + Send + Sync + '_>, ArmError> {
         let mut current_ap = MemoryAp::new(self, access_port)?;
 
         // Construct a CSW to pass to the AP when accessing memory.

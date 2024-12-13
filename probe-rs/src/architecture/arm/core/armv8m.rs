@@ -14,6 +14,7 @@ use crate::{
     }, config::BoardInterface, core::{CoreRegisters, RegisterId, RegisterValue, VectorCatchCondition}, error::Error, memory::{valid_32bit_address, CoreMemoryInterface}, Architecture, BreakpointCause, CoreInformation, CoreInterface, CoreRegister, CoreStatus, CoreType, HaltReason, InstructionSet, MemoryInterface, MemoryMappedRegister
 };
 use bitfield::bitfield;
+use pyo3::pyclass;
 use std::{
     mem::size_of,
     sync::Arc,
@@ -22,7 +23,8 @@ use std::{
 
 /// The state of a core that can be used to persist core state across calls to multiple different cores.
 pub struct Armv8m<'probe> {
-    memory: Box<dyn ArmMemoryInterface + 'probe>,
+    //memory: Box<dyn ArmMemoryInterface + 'probe>,
+    memory: Foo,
 
     state: &'probe mut CortexMState,
 
@@ -31,9 +33,15 @@ pub struct Armv8m<'probe> {
     board: &'probe dyn BoardInterface,
 }
 
+/// Foo class
+#[pyclass]
+pub struct Foo {
+    intf: Box<dyn ArmMemoryInterface + Send + Sync>,
+}
+
 impl<'probe> Armv8m<'probe> {
     pub(crate) fn new(
-        mut memory: Box<dyn ArmMemoryInterface + 'probe>,
+        mut memory: Box<dyn ArmMemoryInterface + Send + Sync + 'probe>,
         state: &'probe mut CortexMState,
         sequence: Arc<dyn ArmDebugSequence>,
         board: &'probe impl BoardInterface,
@@ -70,8 +78,12 @@ impl<'probe> Armv8m<'probe> {
             state.initialize();
         }
 
+        // JDG - pyobject construction here
+
+        let f =  unsafe {std::mem::transmute::<Box<dyn ArmMemoryInterface + Send + Sync + 'probe>, Box<dyn ArmMemoryInterface + Send + Sync + 'static>>(memory)};
+
         Ok(Self {
-            memory,
+            memory: Foo { intf: f },
             state,
             sequence,
             board,
@@ -79,7 +91,7 @@ impl<'probe> Armv8m<'probe> {
     }
 
     fn set_core_status(&mut self, new_status: CoreStatus) {
-        super::update_core_status(&mut self.memory, &mut self.state.current_state, new_status);
+        super::update_core_status(&mut self.memory.intf, &mut self.state.current_state, new_status);
     }
 }
 
@@ -105,7 +117,7 @@ impl CoreInterface for Armv8m<'_> {
     }
 
     fn status(&mut self) -> Result<crate::core::CoreStatus, Error> {
-        let dhcsr = Dhcsr(self.memory.read_word_32(Dhcsr::get_mmio_address())?);
+        let dhcsr = Dhcsr(self.memory.intf.read_word_32(Dhcsr::get_mmio_address())?);
 
         if dhcsr.s_lockup() {
             tracing::warn!(
@@ -131,13 +143,12 @@ impl CoreInterface for Armv8m<'_> {
         // TODO: Handle lockup
 
         if dhcsr.s_halt() {
-            let dfsr = Dfsr(self.memory.read_word_32(Dfsr::get_mmio_address())?);
+            let dfsr = Dfsr(self.memory.intf.read_word_32(Dfsr::get_mmio_address())?);
 
             let mut reason = dfsr.halt_reason();
 
             // Clear bits from Dfsr register
-            self.memory
-                .write_word_32(Dfsr::get_mmio_address(), Dfsr::clear_all().into())?;
+            self.memory.intf.write_word_32(Dfsr::get_mmio_address(), Dfsr::clear_all().into())?;
 
             // If the core was halted before, we cannot read the halt reason from the chip,
             // because we clear it directly after reading.
@@ -192,8 +203,7 @@ impl CoreInterface for Armv8m<'_> {
         value.set_c_debugen(true);
         value.enable_write();
 
-        self.memory
-            .write_word_32(Dhcsr::get_mmio_address(), value.into())?;
+        self.memory.intf.write_word_32(Dhcsr::get_mmio_address(), value.into())?;
 
         self.wait_for_core_halted(timeout)?;
 
@@ -217,9 +227,8 @@ impl CoreInterface for Armv8m<'_> {
         value.set_c_debugen(true);
         value.enable_write();
 
-        self.memory
-            .write_word_32(Dhcsr::get_mmio_address(), value.into())?;
-        self.memory.flush()?;
+        self.memory.intf.write_word_32(Dhcsr::get_mmio_address(), value.into())?;
+        self.memory.intf.flush()?;
 
         // We assume that the core is running now
         self.set_core_status(CoreStatus::Running);
@@ -231,7 +240,9 @@ impl CoreInterface for Armv8m<'_> {
         self.state.semihosting_command = None;
 
         self.sequence
-            .reset_system(&mut *self.memory, crate::CoreType::Armv8m, None, self.board)?;
+            .reset_system(&mut *self.memory.intf, crate::CoreType::Armv8m, None, self.board)?;
+
+        self.board.reset_flash(&self.memory);
         Ok(())
     }
 
@@ -241,7 +252,9 @@ impl CoreInterface for Armv8m<'_> {
         self.reset_catch_set()?;
 
         self.sequence
-            .reset_system(&mut *self.memory, crate::CoreType::Armv8m, None, self.board)?;
+            .reset_system(&mut *self.memory.intf, crate::CoreType::Armv8m, None, self.board)?;
+
+        self.board.reset_flash(&self.memory);
 
         // Update core status
         let _ = self.status()?;
@@ -286,9 +299,8 @@ impl CoreInterface for Armv8m<'_> {
         value.set_c_maskints(true);
         value.enable_write();
 
-        self.memory
-            .write_word_32(Dhcsr::get_mmio_address(), value.into())?;
-        self.memory.flush()?;
+        self.memory.intf.write_word_32(Dhcsr::get_mmio_address(), value.into())?;
+        self.memory.intf.flush()?;
 
         self.wait_for_core_halted(Duration::from_millis(100))?;
 
@@ -320,7 +332,7 @@ impl CoreInterface for Armv8m<'_> {
 
     fn read_core_reg(&mut self, address: RegisterId) -> Result<RegisterValue, Error> {
         if self.state.current_state.is_halted() {
-            let value = super::cortex_m::read_core_reg(&mut *self.memory, address)?;
+            let value = super::cortex_m::read_core_reg(&mut *self.memory.intf, address)?;
             Ok(value.into())
         } else {
             Err(Error::Arm(ArmError::CoreNotHalted))
@@ -329,7 +341,7 @@ impl CoreInterface for Armv8m<'_> {
 
     fn write_core_reg(&mut self, address: RegisterId, value: RegisterValue) -> Result<(), Error> {
         if self.state.current_state.is_halted() {
-            super::cortex_m::write_core_reg(&mut *self.memory, address, value.try_into()?)?;
+            super::cortex_m::write_core_reg(&mut *self.memory.intf, address, value.try_into()?)?;
 
             Ok(())
         } else {
@@ -338,7 +350,7 @@ impl CoreInterface for Armv8m<'_> {
     }
 
     fn available_breakpoint_units(&mut self) -> Result<u32, Error> {
-        let raw_val = self.memory.read_word_32(FpCtrl::get_mmio_address())?;
+        let raw_val = self.memory.intf.read_word_32(FpCtrl::get_mmio_address())?;
 
         let reg = FpCtrl::from(raw_val);
 
@@ -352,7 +364,7 @@ impl CoreInterface for Armv8m<'_> {
         for bp_unit_index in 0..num_hw_breakpoints {
             let reg_addr = FpCompN::get_mmio_address() + (bp_unit_index * size_of::<u32>()) as u64;
             // The raw breakpoint address as read from memory
-            let register_value = self.memory.read_word_32(reg_addr)?;
+            let register_value = self.memory.intf.read_word_32(reg_addr)?;
             // The breakpoint address after it has been adjusted for FpRev 1 or 2
             if FpCompN::from(register_value).enable() {
                 let breakpoint = FpCompN::from(register_value).bp_addr() << 1;
@@ -369,9 +381,8 @@ impl CoreInterface for Armv8m<'_> {
         val.set_key(true);
         val.set_enable(state);
 
-        self.memory
-            .write_word_32(FpCtrl::get_mmio_address(), val.into())?;
-        self.memory.flush()?;
+        self.memory.intf.write_word_32(FpCtrl::get_mmio_address(), val.into())?;
+        self.memory.intf.flush()?;
 
         self.state.hw_breakpoints_enabled = state;
 
@@ -391,7 +402,7 @@ impl CoreInterface for Armv8m<'_> {
 
         let reg_addr = FpCompN::get_mmio_address() + (bp_unit_index * size_of::<u32>()) as u64;
 
-        self.memory.write_word_32(reg_addr, val.into())?;
+        self.memory.intf.write_word_32(reg_addr, val.into())?;
 
         Ok(())
     }
@@ -403,7 +414,7 @@ impl CoreInterface for Armv8m<'_> {
 
         let reg_addr = FpCompN::get_mmio_address() + (bp_unit_index * size_of::<u32>()) as u64;
 
-        self.memory.write_word_32(reg_addr, val.into())?;
+        self.memory.intf.write_word_32(reg_addr, val.into())?;
 
         Ok(())
     }
@@ -460,7 +471,7 @@ impl CoreInterface for Armv8m<'_> {
     fn reset_catch_set(&mut self) -> Result<(), Error> {
         self.sequence
             //.reset_catch_set(&mut *self.memory, CoreType::Armv8m, None, self.board)?;
-            .reset_catch_set(&mut *self.memory, CoreType::Armv8m, None)?;
+            .reset_catch_set(&mut *self.memory.intf, CoreType::Armv8m, None)?;
 
         Ok(())
     }
@@ -468,7 +479,7 @@ impl CoreInterface for Armv8m<'_> {
     #[tracing::instrument(skip(self))]
     fn reset_catch_clear(&mut self) -> Result<(), Error> {
         self.sequence
-            .reset_catch_clear(&mut *self.memory, CoreType::Armv8m, None)?;
+            .reset_catch_clear(&mut *self.memory.intf, CoreType::Armv8m, None)?;
 
         Ok(())
     }
@@ -476,20 +487,19 @@ impl CoreInterface for Armv8m<'_> {
     #[tracing::instrument(skip(self))]
     fn debug_core_stop(&mut self) -> Result<(), Error> {
         self.sequence
-            .debug_core_stop(&mut *self.memory, CoreType::Armv8m)?;
+            .debug_core_stop(&mut *self.memory.intf, CoreType::Armv8m)?;
 
         Ok(())
     }
 
     #[tracing::instrument(skip(self))]
     fn enable_vector_catch(&mut self, condition: VectorCatchCondition) -> Result<(), Error> {
-        let mut dhcsr = Dhcsr(self.memory.read_word_32(Dhcsr::get_mmio_address())?);
+        let mut dhcsr = Dhcsr(self.memory.intf.read_word_32(Dhcsr::get_mmio_address())?);
         dhcsr.set_c_debugen(true);
-        self.memory
-            .write_word_32(Dhcsr::get_mmio_address(), dhcsr.into())?;
+        self.memory.intf.write_word_32(Dhcsr::get_mmio_address(), dhcsr.into())?;
 
-        let mut demcr = Demcr(self.memory.read_word_32(Demcr::get_mmio_address())?);
-        let idpfr1 = IdPfr1(self.memory.read_word_32(IdPfr1::get_mmio_address())?);
+        let mut demcr = Demcr(self.memory.intf.read_word_32(Demcr::get_mmio_address())?);
+        let idpfr1 = IdPfr1(self.memory.intf.read_word_32(IdPfr1::get_mmio_address())?);
         match condition {
             VectorCatchCondition::HardFault => demcr.set_vc_harderr(true),
             VectorCatchCondition::CoreReset => demcr.set_vc_corereset(true),
@@ -508,14 +518,13 @@ impl CoreInterface for Armv8m<'_> {
             }
         };
 
-        self.memory
-            .write_word_32(Demcr::get_mmio_address(), demcr.into())?;
+        self.memory.intf.write_word_32(Demcr::get_mmio_address(), demcr.into())?;
         Ok(())
     }
 
     fn disable_vector_catch(&mut self, condition: VectorCatchCondition) -> Result<(), Error> {
-        let mut demcr = Demcr(self.memory.read_word_32(Demcr::get_mmio_address())?);
-        let idpfr1 = IdPfr1(self.memory.read_word_32(IdPfr1::get_mmio_address())?);
+        let mut demcr = Demcr(self.memory.intf.read_word_32(Demcr::get_mmio_address())?);
+        let idpfr1 = IdPfr1(self.memory.intf.read_word_32(IdPfr1::get_mmio_address())?);
         match condition {
             VectorCatchCondition::HardFault => demcr.set_vc_harderr(false),
             VectorCatchCondition::CoreReset => demcr.set_vc_corereset(false),
@@ -534,8 +543,7 @@ impl CoreInterface for Armv8m<'_> {
             }
         };
 
-        self.memory
-            .write_word_32(Demcr::get_mmio_address(), demcr.into())?;
+        self.memory.intf.write_word_32(Demcr::get_mmio_address(), demcr.into())?;
         Ok(())
     }
 }
@@ -544,10 +552,10 @@ impl CoreMemoryInterface for Armv8m<'_> {
     type ErrorType = ArmError;
 
     fn memory(&self) -> &dyn MemoryInterface<Self::ErrorType> {
-        self.memory.as_memory_interface()
+        self.memory.intf.as_memory_interface()
     }
     fn memory_mut(&mut self) -> &mut dyn MemoryInterface<Self::ErrorType> {
-        self.memory.as_memory_interface_mut()
+        self.memory.intf.as_memory_interface_mut()
     }
 }
 

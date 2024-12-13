@@ -29,6 +29,8 @@ pub(crate) struct ADIMemoryInterface<'interface, APA> {
     memory_ap: MemoryAp,
 }
 
+unsafe impl<'interface, APA> Sync for ADIMemoryInterface<'interface, APA> {}
+
 impl<'interface, APA> ADIMemoryInterface<'interface, APA>
 where
     APA: ApAccess + DapAccess,

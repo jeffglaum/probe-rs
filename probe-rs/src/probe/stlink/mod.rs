@@ -1427,7 +1427,7 @@ impl ArmProbeInterface for StlinkArmDebug {
     fn memory_interface(
         &mut self,
         access_port: &FullyQualifiedApAddress,
-    ) -> Result<Box<dyn ArmMemoryInterface + '_>, ArmError> {
+    ) -> Result<Box<dyn ArmMemoryInterface + Send + Sync + '_>, ArmError> {
         let mem_ap = MemoryAp::new(self, access_port)?;
         let interface = StLinkMemoryInterface {
             probe: self,
@@ -1518,6 +1518,8 @@ struct StLinkMemoryInterface<'probe> {
     probe: &'probe mut StlinkArmDebug,
     current_ap: MemoryAp,
 }
+
+unsafe impl<'probe> Sync for StLinkMemoryInterface<'probe> {}
 
 impl SwdSequence for StLinkMemoryInterface<'_> {
     fn swj_sequence(&mut self, bit_len: u8, bits: u64) -> Result<(), DebugProbeError> {

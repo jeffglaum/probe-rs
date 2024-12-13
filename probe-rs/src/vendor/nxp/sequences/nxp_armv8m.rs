@@ -485,10 +485,10 @@ impl MIMXRT5xxS {
         Ok(())
     }
 
-    fn reset_flash(&self, interface: &mut dyn ArmMemoryInterface, board: &dyn BoardInterface) -> Result<(), ArmError> {
+    fn reset_flash(&self, _interface: &mut dyn ArmMemoryInterface, _board: &dyn BoardInterface) -> Result<(), ArmError> {
 
-        tracing::trace!("FlexSPI flash reset");
-        board.reset_flash(interface);
+        //tracing::trace!("FlexSPI flash reset");
+        //board.reset_flash(interface);
 
         Ok(())
     }
