@@ -45,6 +45,24 @@ impl Script {
         self.script = Some(script);
     }
 
+    /// Return board script contents
+    pub fn get_script(&self) -> Option<String> {
+        if self.script.is_none() {
+            None
+        } else {
+            self.script.clone()
+        }
+    }
+
+    /// Return board script path
+    pub fn get_script_path(&self) -> Option<String> {
+        if self.path.is_none() {
+            None
+        } else {
+            self.path.clone()
+        }
+    }
+
     /// Reset flash
     //pub fn reset_flash(&self, _memory: &dyn ArmMemoryInterface) {
     pub fn reset_flash(&self, _memory: &Foo) {

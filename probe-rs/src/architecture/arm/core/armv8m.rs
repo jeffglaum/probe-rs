@@ -16,20 +16,17 @@ use crate::{
 use bitfield::bitfield;
 use pyo3::pyclass;
 use std::{
-    mem::size_of,
-    sync::Arc,
-    time::{Duration, Instant},
+    borrow::BorrowMut, ffi::CString, mem::size_of, sync::Arc, time::{Duration, Instant}
 };
+use pyo3::prelude::*;
+use pyo3::types::PyList;
+use pyo3_ffi::c_str;
 
 /// The state of a core that can be used to persist core state across calls to multiple different cores.
 pub struct Armv8m<'probe> {
-    //memory: Box<dyn ArmMemoryInterface + 'probe>,
-    memory: Foo,
-
+    memory: pyo3::Py<Foo>,
     state: &'probe mut CortexMState,
-
     sequence: Arc<dyn ArmDebugSequence>,
-
     board: &'probe dyn BoardInterface,
 }
 
@@ -37,6 +34,21 @@ pub struct Armv8m<'probe> {
 #[pyclass]
 pub struct Foo {
     intf: Box<dyn ArmMemoryInterface + Send + Sync>,
+}
+
+#[pymethods]
+impl Foo {
+    fn write_word_32(mut slf: PyRefMut<'_, Self>, address: u64, data: u32) -> PyRefMut<'_, Self> {
+        tracing::warn!("write_word_32(0x{:x}, 0x{:x})", address, data);
+        slf.intf.write_word_32(address, data);
+        slf
+    }
+
+    fn flush(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        tracing::warn!("flush()");
+        slf.intf.flush();
+        slf
+    }
 }
 
 impl<'probe> Armv8m<'probe> {
@@ -78,12 +90,14 @@ impl<'probe> Armv8m<'probe> {
             state.initialize();
         }
 
-        // JDG - pyobject construction here
+        // TODO - transmute lifetime to static
+        let ami =  unsafe {std::mem::transmute::<Box<dyn ArmMemoryInterface + Send + Sync + 'probe>, Box<dyn ArmMemoryInterface + Send + Sync + 'static>>(memory)};
 
-        let f =  unsafe {std::mem::transmute::<Box<dyn ArmMemoryInterface + Send + Sync + 'probe>, Box<dyn ArmMemoryInterface + Send + Sync + 'static>>(memory)};
+        // Convert to a python object smart pointer so it can be shared between python and rust code
+        let memory = Python::with_gil(|py| Py::new(py, Foo { intf: ami}).unwrap());
 
         Ok(Self {
-            memory: Foo { intf: f },
+            memory,
             state,
             sequence,
             board,
@@ -91,7 +105,8 @@ impl<'probe> Armv8m<'probe> {
     }
 
     fn set_core_status(&mut self, new_status: CoreStatus) {
-        super::update_core_status(&mut self.memory.intf, &mut self.state.current_state, new_status);
+        let py = unsafe { Python::assume_gil_acquired() };
+        super::update_core_status(&mut self.memory.borrow_mut(py).intf, &mut self.state.current_state, new_status);
     }
 }
 
@@ -117,7 +132,8 @@ impl CoreInterface for Armv8m<'_> {
     }
 
     fn status(&mut self) -> Result<crate::core::CoreStatus, Error> {
-        let dhcsr = Dhcsr(self.memory.intf.read_word_32(Dhcsr::get_mmio_address())?);
+        let py = unsafe { Python::assume_gil_acquired() };
+        let dhcsr = Dhcsr(self.memory.borrow_mut(py).intf.read_word_32(Dhcsr::get_mmio_address())?);
 
         if dhcsr.s_lockup() {
             tracing::warn!(
@@ -143,12 +159,12 @@ impl CoreInterface for Armv8m<'_> {
         // TODO: Handle lockup
 
         if dhcsr.s_halt() {
-            let dfsr = Dfsr(self.memory.intf.read_word_32(Dfsr::get_mmio_address())?);
+            let dfsr = Dfsr(self.memory.borrow_mut(py).intf.read_word_32(Dfsr::get_mmio_address())?);
 
             let mut reason = dfsr.halt_reason();
 
             // Clear bits from Dfsr register
-            self.memory.intf.write_word_32(Dfsr::get_mmio_address(), Dfsr::clear_all().into())?;
+            self.memory.borrow_mut(py).intf.write_word_32(Dfsr::get_mmio_address(), Dfsr::clear_all().into())?;
 
             // If the core was halted before, we cannot read the halt reason from the chip,
             // because we clear it directly after reading.
@@ -198,12 +214,14 @@ impl CoreInterface for Armv8m<'_> {
     }
 
     fn halt(&mut self, timeout: Duration) -> Result<CoreInformation, Error> {
+        let py = unsafe { Python::assume_gil_acquired() };
+
         let mut value = Dhcsr(0);
         value.set_c_halt(true);
         value.set_c_debugen(true);
         value.enable_write();
 
-        self.memory.intf.write_word_32(Dhcsr::get_mmio_address(), value.into())?;
+        self.memory.borrow_mut(py).intf.write_word_32(Dhcsr::get_mmio_address(), value.into())?;
 
         self.wait_for_core_halted(timeout)?;
 
@@ -227,8 +245,9 @@ impl CoreInterface for Armv8m<'_> {
         value.set_c_debugen(true);
         value.enable_write();
 
-        self.memory.intf.write_word_32(Dhcsr::get_mmio_address(), value.into())?;
-        self.memory.intf.flush()?;
+        let py = unsafe { Python::assume_gil_acquired() };
+        self.memory.borrow_mut(py).intf.write_word_32(Dhcsr::get_mmio_address(), value.into())?;
+        self.memory.borrow_mut(py).intf.flush()?;
 
         // We assume that the core is running now
         self.set_core_status(CoreStatus::Running);
@@ -239,22 +258,42 @@ impl CoreInterface for Armv8m<'_> {
     fn reset(&mut self) -> Result<(), Error> {
         self.state.semihosting_command = None;
 
-        self.sequence
-            .reset_system(&mut *self.memory.intf, crate::CoreType::Armv8m, None, self.board)?;
+        let py = unsafe { Python::assume_gil_acquired() };
+        self.sequence.reset_system(&mut *self.memory.borrow_mut(py).intf, crate::CoreType::Armv8m, None, self.board)?;
 
-        self.board.reset_flash(&self.memory);
+        let script = CString::new(self.board.get_script().unwrap()).unwrap();
+        let _from_python = Python::with_gil(|py| -> PyResult<Py<PyAny>> {
+
+            //let mut a = self.memory.borrow_mut(py);
+            //let b = &mut *a.intf;
+            //self.sequence.reset_system(b, crate::CoreType::Armv8m, None, self.board).unwrap();
+
+            let syspath = py
+                .import("sys")?
+                .getattr("path")?
+                .downcast_into::<PyList>()?;
+                syspath.insert(0, self.board.get_script_path().unwrap())?;
+            let app: Py<PyAny> = PyModule::from_code(py, script.as_c_str(), c_str!(""), c_str!(""))?
+                .getattr("reset_flash")?
+                .into();
+            let args = (&self.memory, "MIMXRT6");
+            app.call1(py, args)
+        });
+
         Ok(())
     }
 
     fn reset_and_halt(&mut self, _timeout: Duration) -> Result<CoreInformation, Error> {
+        let py = unsafe { Python::assume_gil_acquired() };
+
         // Set the vc_corereset bit in the DEMCR register.
         // This will halt the core after reset.
         self.reset_catch_set()?;
 
         self.sequence
-            .reset_system(&mut *self.memory.intf, crate::CoreType::Armv8m, None, self.board)?;
+            .reset_system(&mut *self.memory.borrow_mut(py).intf, crate::CoreType::Armv8m, None, self.board)?;
 
-        self.board.reset_flash(&self.memory);
+        //self.board.reset_flash(&self.memory);
 
         // Update core status
         let _ = self.status()?;
@@ -278,6 +317,8 @@ impl CoreInterface for Armv8m<'_> {
     }
 
     fn step(&mut self) -> Result<CoreInformation, Error> {
+        let py = unsafe { Python::assume_gil_acquired() };
+
         // First check if we stopped on a breakpoint, because this requires special handling before we can continue.
         let breakpoint_at_pc = if matches!(
             self.state.current_state,
@@ -299,8 +340,8 @@ impl CoreInterface for Armv8m<'_> {
         value.set_c_maskints(true);
         value.enable_write();
 
-        self.memory.intf.write_word_32(Dhcsr::get_mmio_address(), value.into())?;
-        self.memory.intf.flush()?;
+        self.memory.borrow_mut(py).intf.write_word_32(Dhcsr::get_mmio_address(), value.into())?;
+        self.memory.borrow_mut(py).intf.flush()?;
 
         self.wait_for_core_halted(Duration::from_millis(100))?;
 
@@ -331,8 +372,10 @@ impl CoreInterface for Armv8m<'_> {
     }
 
     fn read_core_reg(&mut self, address: RegisterId) -> Result<RegisterValue, Error> {
+        let py = unsafe { Python::assume_gil_acquired() };
+
         if self.state.current_state.is_halted() {
-            let value = super::cortex_m::read_core_reg(&mut *self.memory.intf, address)?;
+            let value = super::cortex_m::read_core_reg(&mut *self.memory.borrow_mut(py).intf, address)?;
             Ok(value.into())
         } else {
             Err(Error::Arm(ArmError::CoreNotHalted))
@@ -340,8 +383,10 @@ impl CoreInterface for Armv8m<'_> {
     }
 
     fn write_core_reg(&mut self, address: RegisterId, value: RegisterValue) -> Result<(), Error> {
+        let py = unsafe { Python::assume_gil_acquired() };
+
         if self.state.current_state.is_halted() {
-            super::cortex_m::write_core_reg(&mut *self.memory.intf, address, value.try_into()?)?;
+            super::cortex_m::write_core_reg(&mut *self.memory.borrow_mut(py).intf, address, value.try_into()?)?;
 
             Ok(())
         } else {
@@ -350,7 +395,9 @@ impl CoreInterface for Armv8m<'_> {
     }
 
     fn available_breakpoint_units(&mut self) -> Result<u32, Error> {
-        let raw_val = self.memory.intf.read_word_32(FpCtrl::get_mmio_address())?;
+        let py = unsafe { Python::assume_gil_acquired() };
+
+        let raw_val = self.memory.borrow_mut(py).intf.read_word_32(FpCtrl::get_mmio_address())?;
 
         let reg = FpCtrl::from(raw_val);
 
@@ -359,12 +406,14 @@ impl CoreInterface for Armv8m<'_> {
 
     /// See docs on the [`CoreInterface::hw_breakpoints`] trait
     fn hw_breakpoints(&mut self) -> Result<Vec<Option<u64>>, Error> {
+        let py = unsafe { Python::assume_gil_acquired() };
+
         let mut breakpoints = vec![];
         let num_hw_breakpoints = self.available_breakpoint_units()? as usize;
         for bp_unit_index in 0..num_hw_breakpoints {
             let reg_addr = FpCompN::get_mmio_address() + (bp_unit_index * size_of::<u32>()) as u64;
             // The raw breakpoint address as read from memory
-            let register_value = self.memory.intf.read_word_32(reg_addr)?;
+            let register_value = self.memory.borrow_mut(py).intf.read_word_32(reg_addr)?;
             // The breakpoint address after it has been adjusted for FpRev 1 or 2
             if FpCompN::from(register_value).enable() {
                 let breakpoint = FpCompN::from(register_value).bp_addr() << 1;
@@ -377,12 +426,14 @@ impl CoreInterface for Armv8m<'_> {
     }
 
     fn enable_breakpoints(&mut self, state: bool) -> Result<(), Error> {
+        let py = unsafe { Python::assume_gil_acquired() };
+
         let mut val = FpCtrl::from(0);
         val.set_key(true);
         val.set_enable(state);
 
-        self.memory.intf.write_word_32(FpCtrl::get_mmio_address(), val.into())?;
-        self.memory.intf.flush()?;
+        self.memory.borrow_mut(py).intf.write_word_32(FpCtrl::get_mmio_address(), val.into())?;
+        self.memory.borrow_mut(py).intf.flush()?;
 
         self.state.hw_breakpoints_enabled = state;
 
@@ -390,6 +441,8 @@ impl CoreInterface for Armv8m<'_> {
     }
 
     fn set_hw_breakpoint(&mut self, bp_unit_index: usize, addr: u64) -> Result<(), Error> {
+        let py = unsafe { Python::assume_gil_acquired() };
+
         let addr = valid_32bit_address(addr)?;
 
         let mut val = FpCompN::from(0);
@@ -402,19 +455,21 @@ impl CoreInterface for Armv8m<'_> {
 
         let reg_addr = FpCompN::get_mmio_address() + (bp_unit_index * size_of::<u32>()) as u64;
 
-        self.memory.intf.write_word_32(reg_addr, val.into())?;
+        self.memory.borrow_mut(py).intf.write_word_32(reg_addr, val.into())?;
 
         Ok(())
     }
 
     fn clear_hw_breakpoint(&mut self, bp_unit_index: usize) -> Result<(), Error> {
+        let py = unsafe { Python::assume_gil_acquired() };
+
         let mut val = FpCompN::from(0);
         val.set_enable(false);
         val.set_bp_addr(0);
 
         let reg_addr = FpCompN::get_mmio_address() + (bp_unit_index * size_of::<u32>()) as u64;
 
-        self.memory.intf.write_word_32(reg_addr, val.into())?;
+        self.memory.borrow_mut(py).intf.write_word_32(reg_addr, val.into())?;
 
         Ok(())
     }
@@ -469,37 +524,41 @@ impl CoreInterface for Armv8m<'_> {
 
     #[tracing::instrument(skip(self))]
     fn reset_catch_set(&mut self) -> Result<(), Error> {
+        let py = unsafe { Python::assume_gil_acquired() };
         self.sequence
             //.reset_catch_set(&mut *self.memory, CoreType::Armv8m, None, self.board)?;
-            .reset_catch_set(&mut *self.memory.intf, CoreType::Armv8m, None)?;
+            .reset_catch_set(&mut *self.memory.borrow_mut(py).intf, CoreType::Armv8m, None)?;
 
         Ok(())
     }
 
     #[tracing::instrument(skip(self))]
     fn reset_catch_clear(&mut self) -> Result<(), Error> {
+        let py = unsafe { Python::assume_gil_acquired() };
         self.sequence
-            .reset_catch_clear(&mut *self.memory.intf, CoreType::Armv8m, None)?;
+            .reset_catch_clear(&mut *self.memory.borrow_mut(py).intf, CoreType::Armv8m, None)?;
 
         Ok(())
     }
 
     #[tracing::instrument(skip(self))]
     fn debug_core_stop(&mut self) -> Result<(), Error> {
+        let py = unsafe { Python::assume_gil_acquired() };
         self.sequence
-            .debug_core_stop(&mut *self.memory.intf, CoreType::Armv8m)?;
+            .debug_core_stop(&mut *self.memory.borrow_mut(py).intf, CoreType::Armv8m)?;
 
         Ok(())
     }
 
     #[tracing::instrument(skip(self))]
     fn enable_vector_catch(&mut self, condition: VectorCatchCondition) -> Result<(), Error> {
-        let mut dhcsr = Dhcsr(self.memory.intf.read_word_32(Dhcsr::get_mmio_address())?);
+        let py = unsafe { Python::assume_gil_acquired() };
+        let mut dhcsr = Dhcsr(self.memory.borrow_mut(py).intf.read_word_32(Dhcsr::get_mmio_address())?);
         dhcsr.set_c_debugen(true);
-        self.memory.intf.write_word_32(Dhcsr::get_mmio_address(), dhcsr.into())?;
+        self.memory.borrow_mut(py).intf.write_word_32(Dhcsr::get_mmio_address(), dhcsr.into())?;
 
-        let mut demcr = Demcr(self.memory.intf.read_word_32(Demcr::get_mmio_address())?);
-        let idpfr1 = IdPfr1(self.memory.intf.read_word_32(IdPfr1::get_mmio_address())?);
+        let mut demcr = Demcr(self.memory.borrow_mut(py).intf.read_word_32(Demcr::get_mmio_address())?);
+        let idpfr1 = IdPfr1(self.memory.borrow_mut(py).intf.read_word_32(IdPfr1::get_mmio_address())?);
         match condition {
             VectorCatchCondition::HardFault => demcr.set_vc_harderr(true),
             VectorCatchCondition::CoreReset => demcr.set_vc_corereset(true),
@@ -518,13 +577,14 @@ impl CoreInterface for Armv8m<'_> {
             }
         };
 
-        self.memory.intf.write_word_32(Demcr::get_mmio_address(), demcr.into())?;
+        self.memory.borrow_mut(py).intf.write_word_32(Demcr::get_mmio_address(), demcr.into())?;
         Ok(())
     }
 
     fn disable_vector_catch(&mut self, condition: VectorCatchCondition) -> Result<(), Error> {
-        let mut demcr = Demcr(self.memory.intf.read_word_32(Demcr::get_mmio_address())?);
-        let idpfr1 = IdPfr1(self.memory.intf.read_word_32(IdPfr1::get_mmio_address())?);
+        let py = unsafe { Python::assume_gil_acquired() };
+        let mut demcr = Demcr(self.memory.borrow_mut(py).intf.read_word_32(Demcr::get_mmio_address())?);
+        let idpfr1 = IdPfr1(self.memory.borrow_mut(py).intf.read_word_32(IdPfr1::get_mmio_address())?);
         match condition {
             VectorCatchCondition::HardFault => demcr.set_vc_harderr(false),
             VectorCatchCondition::CoreReset => demcr.set_vc_corereset(false),
@@ -543,7 +603,7 @@ impl CoreInterface for Armv8m<'_> {
             }
         };
 
-        self.memory.intf.write_word_32(Demcr::get_mmio_address(), demcr.into())?;
+        self.memory.borrow_mut(py).intf.write_word_32(Demcr::get_mmio_address(), demcr.into())?;
         Ok(())
     }
 }
@@ -551,12 +611,15 @@ impl CoreInterface for Armv8m<'_> {
 impl CoreMemoryInterface for Armv8m<'_> {
     type ErrorType = ArmError;
 
-    fn memory(&self) -> &dyn MemoryInterface<Self::ErrorType> {
+     fn memory(&self) -> &dyn MemoryInterface<Self::ErrorType> {
+        //let py = unsafe { Python::assume_gil_acquired() };
         self.memory.intf.as_memory_interface()
-    }
-    fn memory_mut(&mut self) -> &mut dyn MemoryInterface<Self::ErrorType> {
+     }
+
+     fn memory_mut(&mut self) -> &mut dyn MemoryInterface<Self::ErrorType> {
+        //let py = unsafe { Python::assume_gil_acquired() };
         self.memory.intf.as_memory_interface_mut()
-    }
+     }
 }
 
 bitfield! {
