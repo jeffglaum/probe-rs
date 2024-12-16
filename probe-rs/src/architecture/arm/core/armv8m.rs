@@ -11,12 +11,11 @@ use crate::{
     architecture::arm::{
         core::registers::cortex_m::XPSR, memory::ArmMemoryInterface, sequences::ArmDebugSequence,
         ArmError,
-    }, config::BoardInterface, core::{CoreRegisters, RegisterId, RegisterValue, VectorCatchCondition}, error::Error, memory::{valid_32bit_address, CoreMemoryInterface}, Architecture, BreakpointCause, CoreInformation, CoreInterface, CoreRegister, CoreStatus, CoreType, HaltReason, InstructionSet, MemoryInterface, MemoryMappedRegister
+    }, config::BoardInterface, core::{CoreRegisters, RegisterId, RegisterValue, VectorCatchCondition}, error::Error, memory::{valid_32bit_address, CoreMemoryInterface}, script::ScriptInterface, Architecture, BreakpointCause, CoreInformation, CoreInterface, CoreRegister, CoreStatus, CoreType, HaltReason, InstructionSet, MemoryInterface, MemoryMappedRegister
 };
 use bitfield::bitfield;
-use pyo3::pyclass;
 use std::{
-    borrow::BorrowMut, ffi::CString, mem::size_of, sync::Arc, time::{Duration, Instant}
+    ffi::CString, mem::size_of, sync::Arc, time::{Duration, Instant}
 };
 use pyo3::prelude::*;
 use pyo3::types::PyList;
@@ -24,31 +23,10 @@ use pyo3_ffi::c_str;
 
 /// The state of a core that can be used to persist core state across calls to multiple different cores.
 pub struct Armv8m<'probe> {
-    memory: pyo3::Py<Foo>,
+    memory: pyo3::Py<ScriptInterface>,
     state: &'probe mut CortexMState,
     sequence: Arc<dyn ArmDebugSequence>,
     board: &'probe dyn BoardInterface,
-}
-
-/// Foo class
-#[pyclass]
-pub struct Foo {
-    intf: Box<dyn ArmMemoryInterface + Send + Sync>,
-}
-
-#[pymethods]
-impl Foo {
-    fn write_word_32(mut slf: PyRefMut<'_, Self>, address: u64, data: u32) -> PyRefMut<'_, Self> {
-        tracing::warn!("write_word_32(0x{:x}, 0x{:x})", address, data);
-        slf.intf.write_word_32(address, data);
-        slf
-    }
-
-    fn flush(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
-        tracing::warn!("flush()");
-        slf.intf.flush();
-        slf
-    }
 }
 
 impl<'probe> Armv8m<'probe> {
@@ -94,7 +72,7 @@ impl<'probe> Armv8m<'probe> {
         let ami =  unsafe {std::mem::transmute::<Box<dyn ArmMemoryInterface + Send + Sync + 'probe>, Box<dyn ArmMemoryInterface + Send + Sync + 'static>>(memory)};
 
         // Convert to a python object smart pointer so it can be shared between python and rust code
-        let memory = Python::with_gil(|py| Py::new(py, Foo { intf: ami}).unwrap());
+        let memory = Python::with_gil(|py| Py::new(py, ScriptInterface { intf: ami}).unwrap());
 
         Ok(Self {
             memory,
@@ -257,25 +235,24 @@ impl CoreInterface for Armv8m<'_> {
 
     fn reset(&mut self) -> Result<(), Error> {
         self.state.semihosting_command = None;
-
+        
         let py = unsafe { Python::assume_gil_acquired() };
         self.sequence.reset_system(&mut *self.memory.borrow_mut(py).intf, crate::CoreType::Armv8m, None, self.board)?;
 
         let script = CString::new(self.board.get_script().unwrap()).unwrap();
         let _from_python = Python::with_gil(|py| -> PyResult<Py<PyAny>> {
 
-            //let mut a = self.memory.borrow_mut(py);
-            //let b = &mut *a.intf;
-            //self.sequence.reset_system(b, crate::CoreType::Armv8m, None, self.board).unwrap();
-
             let syspath = py
                 .import("sys")?
                 .getattr("path")?
                 .downcast_into::<PyList>()?;
+
                 syspath.insert(0, self.board.get_script_path().unwrap())?;
+
             let app: Py<PyAny> = PyModule::from_code(py, script.as_c_str(), c_str!(""), c_str!(""))?
                 .getattr("reset_flash")?
                 .into();
+
             let args = (&self.memory, "MIMXRT6");
             app.call1(py, args)
         });

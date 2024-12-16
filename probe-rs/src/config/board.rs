@@ -1,6 +1,5 @@
 //use crate::{architecture::arm::memory::ArmMemoryInterface, script::Script};
 use crate::script::Script;
-use crate::architecture::arm::armv8m::Foo;
 
 /// Definition of a hardware board
 #[derive(Debug)]
@@ -30,10 +29,6 @@ pub trait BoardInterface: Send {
 
     /// Get script path
     fn get_script_path(&self) -> Option<String>;
-
-    /// Reset flash
-    //fn reset_flash(&self, interface: &mut dyn ArmMemoryInterface);
-    fn reset_flash(&self, interface: &Foo);
 }
 
 impl BoardInterface for Board {
@@ -48,10 +43,5 @@ impl BoardInterface for Board {
 
     fn get_script_path(&self) -> Option<String> {
         self.script.get_script_path()
-    }
-
-    //fn reset_flash(&self, interface: &mut dyn ArmMemoryInterface) {
-    fn reset_flash(&self, interface: &Foo) {
-        self.script.reset_flash(interface);
     }
 }
