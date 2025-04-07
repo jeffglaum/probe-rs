@@ -94,25 +94,27 @@ fn monitor_impl(
         cancellation_token: ctx.cancellation_token(),
     };
 
-    let mut clear_control_block = true;
-    match request.mode {
-        MonitorMode::Run(BootInfo::FromRam {
-            vector_table_addr, ..
-        }) => {
+    //let mut clear_control_block = true;
+    let clear_control_block = true;
+    //match request.mode {
+        //MonitorMode::Run(BootInfo::FromRam {
+            //vector_table_addr, ..
+        //}) => {
             // core should be already reset and halt by this point.
-            session.prepare_running_on_ram(vector_table_addr)?;
-        }
-        MonitorMode::Run(BootInfo::Other) => {
+            //session.prepare_running_on_ram(vector_table_addr)?;
+            session.prepare_running_on_ram(0xc0000)?;
+        //}
+        //MonitorMode::Run(BootInfo::Other) => {
             // reset the core to leave it in a consistent state after flashing
-            session
-                .core(core_id)?
-                .reset_and_halt(Duration::from_millis(100))?;
-        }
-        MonitorMode::AttachToRunning => {
+            //session
+                //.core(core_id)?
+                //.reset_and_halt(Duration::from_millis(100))?;
+        //}
+        //MonitorMode::AttachToRunning => {
             // do nothing
-            clear_control_block = false;
-        }
-    }
+            //clear_control_block = false;
+        //}
+    //}
 
     let mut core = session.core(run_loop.core_id)?;
     if clear_control_block {

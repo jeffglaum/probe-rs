@@ -9,6 +9,7 @@ use crate::{
     vendor::{
         Vendor,
         microchip::sequences::atsam::{AtSAM, DsuDid},
+        microchip::sequences::mec17xx::Mec17xx,
     },
 };
 
@@ -28,7 +29,13 @@ impl Vendor for Microchip {
         {
             DebugSequence::Arm(AtSAM::create())
         } else {
-            return None;
+            if chip.name.starts_with("MEC1723")
+            {
+                DebugSequence::Arm(Mec17xx::create())
+            }
+            else {
+                return None;
+            }
         };
 
         Some(sequence)
