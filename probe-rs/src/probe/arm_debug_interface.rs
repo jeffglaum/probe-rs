@@ -1195,9 +1195,6 @@ impl<Probe: DebugProbe + RawProtocolIo + JTAGAccess + 'static> RawDapAccess for 
             // The other errors mean that something went wrong with the protocol itself.
             // There's no guaranteed correct way to recover, so don't.
             TransferStatus::Failed(e) => {
-                // TODO
-                tracing::warn!("raw_write_register error: halting...");
-                loop{}
                 Err(e.into())
             },
             other => panic!(
