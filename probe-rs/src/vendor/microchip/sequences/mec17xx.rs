@@ -126,7 +126,6 @@ impl ArmDebugSequence for Mec17xx {
     ) -> Result<(), ArmError> {
         let mut core = interface.memory_interface(core_ap)?;
 
-        tracing::warn!("******* debug_core_start");
         self.release_reset_extension(&mut *core)
     }
 
@@ -137,8 +136,6 @@ impl ArmDebugSequence for Mec17xx {
         debug_base: Option<u64>,
     ) -> Result<(), ArmError> {
         use crate::architecture::arm::core::armv8m::Aircr;
-
-        tracing::warn!("******* reset_system");
 
         let mut aircr = Aircr(0);
         aircr.vectkey();
